@@ -495,7 +495,7 @@ namespace show {
 			this->Controls->Add(this->dataGridView1);
 			this->FormBorderStyle = System::Windows::Forms::FormBorderStyle::FixedSingle;
 			this->Name = L"Form1";
-			this->Text = L"marker";
+			this->Text = L"marker 1.5";
 			this->FormClosing += gcnew System::Windows::Forms::FormClosingEventHandler(this, &Form1::Form1_FormClosing);
 			this->Load += gcnew System::EventHandler(this, &Form1::Form1_Load);
 			(cli::safe_cast<System::ComponentModel::ISupportInitialize^  >(this->dataGridView1))->EndInit();
@@ -603,6 +603,8 @@ namespace show {
 						int intFoo;
 						dataGridView1->Columns->Add("frame", "frame");
 						dataGridView1->Columns["frame"]->ValueType = intFoo.GetType();
+						dataGridView1->Columns["frame"]->ReadOnly = true;
+
 						dataGridView1->Columns->Add("templateX", "templateX");//template was found at tempX tempY
 						dataGridView1->Columns["templateX"]->ValueType = intFoo.GetType();
 						dataGridView1->Columns->Add("templateY", "templateY");
@@ -697,7 +699,7 @@ public: static void myMouseHandler(int mevent, int x, int y, int flags, void* pa
     if (mevent == CV_EVENT_LBUTTONUP && drag)
     {
 		if (!frame1) return;
-		//release point can be: right below | left below | left above | right above 
+		//release point can be: right below | left below | left above | right above | same
 
 		int roiX,roiY,roiW,roiH;
 
@@ -729,12 +731,53 @@ public: static void myMouseHandler(int mevent, int x, int y, int flags, void* pa
 			roiH = y-ddy;
 		}
 
+		if ((x-ddx == 0) || (y-ddy == 0)){//same; nothing selected relase=onpress
+			roiX = ddx; //here dragdrop started
+			roiY = ddy; //here dragdrop started
+			roiW = ddx+70;
+			roiH = ddy+70;
+		}
+
 		//load current frame from video; without green rectangle for position and pupille point
+
 		IplImage *temp;
 		double frameRate = (double) cvGetCaptureProperty(capture1, CV_CAP_PROP_FPS);
 		double frameTime = ((double)1000.0 * (double)currentFrame) / frameRate;
 		cvSetCaptureProperty(capture1, CV_CAP_PROP_POS_MSEC, frameTime);
 		temp = cvQueryFrame(capture1);
+
+		int actualFrame = cvGetCaptureProperty(capture1, CV_CAP_PROP_POS_FRAMES)+1;
+
+		if (actualFrame != currentFrame){//we have a problem
+			double frameRate = (double) cvGetCaptureProperty(capture1, CV_CAP_PROP_FPS);
+			double frameTime = 1000.0 * (double)currentFrame / (double)frameRate - 15000;//set to 15 sec before
+			cvSetCaptureProperty(capture1, CV_CAP_PROP_POS_MSEC, frameTime);
+			temp = cvQueryFrame(capture1);
+			actualFrame = cvGetCaptureProperty(capture1, CV_CAP_PROP_POS_FRAMES)+1;
+
+			if(actualFrame < currentFrame){
+
+				//seek from -15seconds before
+				for(int i=actualFrame; i < currentFrame; i++){//read until frame
+					temp = cvQueryFrame(capture1);
+				}
+
+			}else{//still a problem
+				//do a bruteforce sync
+				cvSetCaptureProperty(capture1, CV_CAP_PROP_POS_MSEC, 0);
+				for(int i=0; i <= currentFrame; i++){
+					temp = cvQueryFrame(capture1);
+				}
+			}
+			/*
+			actualFrame = cvGetCaptureProperty(capture1, CV_CAP_PROP_POS_FRAMES)+1;
+			String^ soll = currentFrame.ToString();
+			String^ ist = actualFrame.ToString();
+			MessageBox::Show("soll:"+soll+"| ist:" +ist);
+			*/
+		}
+
+
 
 
 		cvSetImageROI(temp, cvRect(roiX, roiY, roiW, roiH));
@@ -788,14 +831,44 @@ private: System::Void  show(int row){
 						//frame1 = cvQueryFrame(capture1);
 
 
-
 						double frameRate = (double) cvGetCaptureProperty(capture1, CV_CAP_PROP_FPS);
 						double frameTime = ((double)1000.0 * (double)frame) / frameRate;
 					    cvSetCaptureProperty(capture1, CV_CAP_PROP_POS_MSEC, frameTime);
 						frame1 = cvQueryFrame(capture1);
-
-
 						currentFrame = frame;
+
+						int actualFrame = cvGetCaptureProperty(capture1, CV_CAP_PROP_POS_FRAMES)+1;
+
+						if (actualFrame != frame){//we have a problem
+							double frameRate = (double) cvGetCaptureProperty(capture1, CV_CAP_PROP_FPS);
+							double frameTime = 1000.0 * (double)frame / (double)frameRate - 15000;//set to 15 sec before
+							cvSetCaptureProperty(capture1, CV_CAP_PROP_POS_MSEC, frameTime);
+							frame1 = cvQueryFrame(capture1);
+							actualFrame = cvGetCaptureProperty(capture1, CV_CAP_PROP_POS_FRAMES)+1;
+
+							if(actualFrame < frame){
+
+								//seek from -15seconds before
+								for(int i=actualFrame; i < frame; i++){//read until frame
+									frame1 = cvQueryFrame(capture1);
+								}
+
+							}else{//still a problem
+							   //do a bruteforce sync
+								cvSetCaptureProperty(capture1, CV_CAP_PROP_POS_MSEC, 0);
+								for(int i=0; i <= frame; i++){
+									frame1 = cvQueryFrame(capture1);
+								}
+							}
+							/*
+							actualFrame = cvGetCaptureProperty(capture1, CV_CAP_PROP_POS_FRAMES)+1;
+							String^ soll = frame.ToString();
+							String^ ist = actualFrame.ToString();
+							MessageBox::Show("soll:"+soll+"| ist:" +ist);
+							*/
+						}
+
+
 
 
 						int x,y;
@@ -904,8 +977,18 @@ public: System::Int32 updateUI(System::Int32 msg, System::Int32 i){
 			   if (msg == MSG_SELECT_ROW){ dataGridView1->FirstDisplayedScrollingRowIndex = i;}
 
 			   if (msg == MSG_PROGRESS){frameLabel->Text = "processing frame: "+i.ToString() + "/"+dataGridView1->Rows->Count.ToString();}
-			   if (msg == MSG_FORM_OFF){ panel1->Enabled = false; dataGridView1->ReadOnly = true;}
-			   if (msg == MSG_FORM_ON){panel1->Enabled = true; dataGridView1->ReadOnly = false;}
+			   if (msg == MSG_FORM_OFF){ 
+				   panel1->Enabled = false; 
+				   for (int i = 0; i < dataGridView1->Columns->Count; i++){
+					dataGridView1->Columns[i]->SortMode = DataGridViewColumnSortMode::NotSortable;
+				 }
+			   }
+			   if (msg == MSG_FORM_ON){
+				   panel1->Enabled = true; 
+				   for (int i = 0; i < dataGridView1->Columns->Count; i++){
+					dataGridView1->Columns[i]->SortMode = DataGridViewColumnSortMode::Automatic;
+				 }
+			   }
 			   if (msg == MSG_DONE){done();}
 			   if (msg == MSG_SHOW_CURRENT_FRAME){show(currentFrame);}
 		   }
@@ -963,7 +1046,9 @@ public: System::Void matchThread(){
   CvPoint matchLoc;
 
 			int no_of_frames = (int) cvGetCaptureProperty(capture1, CV_CAP_PROP_FRAME_COUNT);
-			cvSetCaptureProperty(capture1, CV_CAP_PROP_POS_FRAMES, 0);
+			//cvSetCaptureProperty(capture1, CV_CAP_PROP_POS_FRAMES, 0);
+			cvSetCaptureProperty(capture1, CV_CAP_PROP_POS_MSEC, 0);//set 0
+
 
 			if (dataGridView1->Rows->Count >0){
 				int i;
